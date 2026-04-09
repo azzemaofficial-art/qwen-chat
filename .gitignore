@@ -8,59 +8,56 @@ __pycache__/
 env/
 venv/
 .venv/
-.eggs/
-.egg-info/
-dist/
-build/
-*.egg-info/
-*.egg
-
-# Dependencies
-requirements.txt.bak
-
-# Logs
+.ENV
+.venv.bak/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
 *.log
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+*.pot
+*.po
+*~
+.pytest_cache/
+.mypy_cache/
+.hypothesis/
+.eggs/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+.lib/
+.wafpickle-*
+build/
+dist/
+*.egg-info/
+.egg-info/
+src/*.egg-info/
 
 # Environment variables
 .env
 .env.local
-*.env
+.env.dev
+.env.test
+.env.prod
+.env.*
+!.env.example
 
-# Coverage reports
-.coverage
-coverage/
-htmlcov/
-
-# IDE specific
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *.tmp
 
-# Testing
-.pytest_cache/
-.mypy_cache/
-.hypothesis/
-
-# Distribution / packaging
-*.tar.gz
-*.whl
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# Local configuration
-config/local_settings.py
+# OS
+.DS_Store
+Thumbs.db
 ```
