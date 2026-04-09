@@ -1,6 +1,7 @@
 """
 Technical Analysis - Analisi tecnica avanzata
 Include indicatori, pattern recognition e segnali
+Aggiornato con: Ichimoku, VWAP, Fibonacci, Pattern Candlestick
 """
 
 import pandas as pd
@@ -27,6 +28,15 @@ class TechnicalIndicator:
     description: str
 
 
+@dataclass
+class CandlestickPattern:
+    """Pattern candlestick rilevato"""
+    name: str
+    type: str  # 'bullish' o 'bearish'
+    strength: float  # 0-100
+    description: str
+
+
 class TechnicalAnalyzer:
     """Analizzatore tecnico per identificare opportunità di trading"""
     
@@ -38,6 +48,7 @@ class TechnicalAnalyzer:
         self.df = df.copy()
         self.signals = []
         self.indicators = {}
+        self.patterns = []
         
         if not self._validate_data():
             raise ValueError("Dati non validi per l'analisi tecnica")
@@ -61,6 +72,54 @@ class TechnicalAnalyzer:
         self.indicators[f'EMA_{period}'] = ema
         return ema
     
+    def calculate_vwap(self) -> pd.Series:
+        """Volume Weighted Average Price - Prezzo medio ponderato per volume"""
+        typical_price = (self.df['High'] + self.df['Low'] + self.df['Close']) / 3
+        vwap = (typical_price * self.df['Volume']).cumsum() / self.df['Volume'].cumsum()
+        self.indicators['VWAP'] = vwap
+        return vwap
+    
+    def calculate_ichimoku_cloud(
+        self,
+        tenkan_period: int = 9,
+        kijun_period: int = 26,
+        senkou_b_period: int = 52
+    ) -> Dict[str, pd.Series]:
+        """
+        Ichimoku Cloud - Sistema completo di trend following
+        """
+        # Tenkan-sen (Conversion Line)
+        high_tenkan = self.df['High'].rolling(window=tenkan_period).max()
+        low_tenkan = self.df['Low'].rolling(window=tenkan_period).min()
+        tenkan_sen = (high_tenkan + low_tenkan) / 2
+        
+        # Kijun-sen (Base Line)
+        high_kijun = self.df['High'].rolling(window=kijun_period).max()
+        low_kijun = self.df['Low'].rolling(window=kijun_period).min()
+        kijun_sen = (high_kijun + low_kijun) / 2
+        
+        # Senkou Span A (Leading Span A)
+        senkou_span_a = ((tenkan_sen + kijun_sen) / 2).shift(kijun_period)
+        
+        # Senkou Span B (Leading Span B)
+        high_senkou_b = self.df['High'].rolling(window=senkou_b_period).max()
+        low_senkou_b = self.df['Low'].rolling(window=senkou_b_period).min()
+        senkou_span_b = ((high_senkou_b + low_senkou_b) / 2).shift(kijun_period)
+        
+        # Chikou Span (Lagging Span)
+        chikou_span = self.df['Close'].shift(-kijun_period)
+        
+        result = {
+            'tenkan': tenkan_sen,
+            'kijun': kijun_sen,
+            'senkou_a': senkou_span_a,
+            'senkou_b': senkou_span_b,
+            'chikou': chikou_span
+        }
+        
+        self.indicators['Ichimoku'] = result
+        return result
+    
     def calculate_macd(
         self, 
         fast_period: int = 12, 
@@ -69,9 +128,6 @@ class TechnicalAnalyzer:
     ) -> Dict[str, pd.Series]:
         """
         MACD (Moving Average Convergence Divergence)
-        
-        Returns:
-            Dict con MACD line, Signal line e Histogram
         """
         ema_fast = self.df['Close'].ewm(span=fast_period, adjust=False).mean()
         ema_slow = self.df['Close'].ewm(span=slow_period, adjust=False).mean()
@@ -157,6 +213,15 @@ class TechnicalAnalyzer:
         self.indicators['CCI'] = cci
         return cci
     
+    def calculate_williams_r(self, period: int = 14) -> pd.Series:
+        """Williams %R - Indicatore di momentum"""
+        highest_high = self.df['High'].rolling(window=period).max()
+        lowest_low = self.df['Low'].rolling(window=period).min()
+        
+        williams_r = -100 * (highest_high - self.df['Close']) / (highest_high - lowest_low)
+        self.indicators['Williams_R'] = williams_r
+        return williams_r
+    
     # === Indicatori di Volatilità ===
     
     def calculate_bollinger_bands(
@@ -171,11 +236,16 @@ class TechnicalAnalyzer:
         upper = sma + (std * std_dev)
         lower = sma - (std * std_dev)
         
+        # Bandwidth e %B
+        bandwidth = (upper - lower) / sma * 100
+        percent_b = (self.df['Close'] - lower) / (upper - lower)
+        
         result = {
             'upper': upper,
             'middle': sma,
             'lower': lower,
-            'bandwidth': (upper - lower) / sma * 100
+            'bandwidth': bandwidth,
+            'percent_b': percent_b
         }
         
         self.indicators['Bollinger'] = result
@@ -196,6 +266,28 @@ class TechnicalAnalyzer:
         self.indicators['ATR'] = atr
         return atr
     
+    def calculate_keltner_channels(
+        self,
+        ema_period: int = 20,
+        atr_period: int = 10,
+        multiplier: float = 2.0
+    ) -> Dict[str, pd.Series]:
+        """Keltner Channels - Canali basati su ATR"""
+        ema = self.df['Close'].ewm(span=ema_period, adjust=False).mean()
+        atr = self.calculate_atr(atr_period)
+        
+        upper = ema + (atr * multiplier)
+        lower = ema - (atr * multiplier)
+        
+        result = {
+            'upper': upper,
+            'middle': ema,
+            'lower': lower
+        }
+        
+        self.indicators['Keltner'] = result
+        return result
+    
     # === Volumi ===
     
     def calculate_obv(self) -> pd.Series:
@@ -210,11 +302,129 @@ class TechnicalAnalyzer:
         self.indicators['Volume_SMA'] = vol_sma
         return vol_sma
     
+    def calculate_mfi(self, period: int = 14) -> pd.Series:
+        """Money Flow Index - RSI ponderato per volume"""
+        typical_price = (self.df['High'] + self.df['Low'] + self.df['Close']) / 3
+        money_flow = typical_price * self.df['Volume']
+        
+        delta = typical_price.diff()
+        positive_flow = money_flow.where(delta > 0, 0)
+        negative_flow = money_flow.where(delta < 0, 0)
+        
+        positive_mf = positive_flow.rolling(window=period).sum()
+        negative_mf = negative_flow.rolling(window=period).sum()
+        
+        mfi = 100 - (100 / (1 + positive_mf / negative_mf))
+        self.indicators['MFI'] = mfi
+        return mfi
+    
+    # === Fibonacci Retracement ===
+    
+    def calculate_fibonacci_levels(self, lookback: int = 100) -> Dict[str, float]:
+        """Calcola livelli di ritracciamento di Fibonacci"""
+        df = self.df[-lookback:]
+        
+        high = df['High'].max()
+        low = df['Low'].min()
+        
+        diff = high - low
+        
+        levels = {
+            '0.0%': low,
+            '23.6%': low + diff * 0.236,
+            '38.2%': low + diff * 0.382,
+            '50.0%': low + diff * 0.5,
+            '61.8%': low + diff * 0.618,
+            '78.6%': low + diff * 0.786,
+            '100.0%': high
+        }
+        
+        self.indicators['Fibonacci'] = levels
+        return levels
+    
+    # === Pattern Recognition ===
+    
+    def detect_candlestick_patterns(self) -> List[CandlestickPattern]:
+        """Rileva pattern candlestick significativi"""
+        patterns = []
+        df = self.df
+        
+        for i in range(2, len(df)):
+            current = df.iloc[i]
+            prev = df.iloc[i-1]
+            prev2 = df.iloc[i-2]
+            
+            # Doji
+            body_size = abs(current['Close'] - current['Open'])
+            total_range = current['High'] - current['Low']
+            if total_range > 0 and body_size / total_range < 0.1:
+                patterns.append(CandlestickPattern(
+                    name="Doji",
+                    type="neutral",
+                    strength=60,
+                    description="Indecisione del mercato"
+                ))
+            
+            # Hammer
+            lower_shadow = min(current['Open'], current['Close']) - current['Low']
+            upper_shadow = current['High'] - max(current['Open'], current['Close'])
+            body = abs(current['Close'] - current['Open'])
+            
+            if lower_shadow > body * 2 and upper_shadow < body * 0.5:
+                if current['Close'] > current['Open']:
+                    patterns.append(CandlestickPattern(
+                        name="Hammer",
+                        type="bullish",
+                        strength=75,
+                        description="Possibile inversione rialzista"
+                    ))
+            
+            # Engulfing Bullish
+            if (prev['Close'] < prev['Open'] and 
+                current['Close'] > current['Open'] and
+                current['Open'] < prev['Close'] and
+                current['Close'] > prev['Open']):
+                patterns.append(CandlestickPattern(
+                    name="Engulfing Bullish",
+                    type="bullish",
+                    strength=80,
+                    description="Forte segnale di acquisto"
+                ))
+            
+            # Engulfing Bearish
+            if (prev['Close'] > prev['Open'] and 
+                current['Close'] < current['Open'] and
+                current['Open'] > prev['Close'] and
+                current['Close'] < prev['Open']):
+                patterns.append(CandlestickPattern(
+                    name="Engulfing Bearish",
+                    type="bearish",
+                    strength=80,
+                    description="Forte segnale di vendita"
+                ))
+            
+            # Morning Star
+            if (len(df) > i+2 and
+                prev2['Close'] < prev2['Open'] and
+                body < prev2['Close'] - prev2['Open'] and
+                current['Close'] > current['Open'] and
+                current['Close'] > (prev2['Open'] + prev2['Close']) / 2):
+                patterns.append(CandlestickPattern(
+                    name="Morning Star",
+                    type="bullish",
+                    strength=85,
+                    description="Inversione rialzista a 3 candele"
+                ))
+        
+        # Mantieni solo ultimi pattern rilevanti
+        self.patterns = patterns[-10:]
+        return self.patterns
+    
     # === Analisi completa ===
     
     def calculate_all_indicators(self):
         """Calcola tutti gli indicatori principali"""
-        print("Calcolo indicatori tecnici...")
+        print("Calcolo indicatori tecnici avanzati...")
         
         # Trend
         self.calculate_sma(20)
@@ -222,6 +432,8 @@ class TechnicalAnalyzer:
         self.calculate_sma(200)
         self.calculate_ema(12)
         self.calculate_ema(26)
+        self.calculate_vwap()
+        self.calculate_ichimoku_cloud()
         self.calculate_macd()
         self.calculate_adx()
         
@@ -229,23 +441,30 @@ class TechnicalAnalyzer:
         self.calculate_rsi()
         self.calculate_stochastic()
         self.calculate_cci()
+        self.calculate_williams_r()
+        self.calculate_mfi()
         
         # Volatilità
         self.calculate_bollinger_bands()
         self.calculate_atr()
+        self.calculate_keltner_channels()
         
         # Volumi
         self.calculate_obv()
         self.calculate_volume_sma()
         
+        # Fibonacci
+        self.calculate_fibonacci_levels()
+        
+        # Pattern
+        self.detect_candlestick_patterns()
+        
         print(f"Calcolati {len(self.indicators)} gruppi di indicatori")
+        print(f"Rilevati {len(self.patterns)} pattern candlestick")
     
     def generate_signals(self) -> List[TechnicalIndicator]:
         """
         Genera segnali di trading basati su tutti gli indicatori
-        
-        Returns:
-            Lista di segnali tecnici
         """
         signals = []
         latest = self.df.iloc[-1]
@@ -295,16 +514,17 @@ class TechnicalAnalyzer:
         price = latest['Close']
         upper = bb['upper'].iloc[-1]
         lower = bb['lower'].iloc[-1]
+        percent_b = bb['percent_b'].iloc[-1]
         
-        if price <= lower:
+        if price <= lower or percent_b < 0:
             signals.append(TechnicalIndicator(
                 name="Bollinger", value=price, signal=Signal.BUY,
-                description="Prezzo tocca banda inferiore - possibile rimbalzo"
+                description="Prezzo tocca/supera banda inferiore"
             ))
-        elif price >= upper:
+        elif price >= upper or percent_b > 1:
             signals.append(TechnicalIndicator(
                 name="Bollinger", value=price, signal=Signal.SELL,
-                description="Prezzo tocca banda superiore - possibile ritracciamento"
+                description="Prezzo tocca/supera banda superiore"
             ))
         else:
             signals.append(TechnicalIndicator(
@@ -312,7 +532,7 @@ class TechnicalAnalyzer:
                 description="Prezzo dentro le bande"
             ))
         
-        # ADX Signal (forza del trend)
+        # ADX Signal
         adx = self.indicators['ADX'].iloc[-1]
         if adx > 25:
             signals.append(TechnicalIndicator(
@@ -323,6 +543,47 @@ class TechnicalAnalyzer:
             signals.append(TechnicalIndicator(
                 name="ADX", value=adx, signal=Signal.NEUTRAL,
                 description=f"Trend debole ({adx:.1f}) - mercato laterale"
+            ))
+        
+        # Ichimoku Cloud Signal
+        ichimoku = self.indicators['Ichimoku']
+        price = latest['Close']
+        tenkan = ichimoku['tenkan'].iloc[-1]
+        kijun = ichimoku['kijun'].iloc[-1]
+        senkou_a = ichimoku['senkou_a'].iloc[-1]
+        senkou_b = ichimoku['senkou_b'].iloc[-1]
+        
+        cloud_top = max(senkou_a, senkou_b) if pd.notna(senkou_a) and pd.notna(senkou_b) else None
+        cloud_bottom = min(senkou_a, senkou_b) if pd.notna(senkou_a) and pd.notna(senkou_b) else None
+        
+        if cloud_top and cloud_bottom:
+            if price > cloud_top and tenkan > kijun:
+                signals.append(TechnicalIndicator(
+                    name="Ichimoku", value=price, signal=Signal.STRONG_BUY,
+                    description="Prezzo sopra cloud + Tenkan > Kijun"
+                ))
+            elif price < cloud_bottom and tenkan < kijun:
+                signals.append(TechnicalIndicator(
+                    name="Ichimoku", value=price, signal=Signal.STRONG_SELL,
+                    description="Prezzo sotto cloud + Tenkan < Kijun"
+                ))
+            else:
+                signals.append(TechnicalIndicator(
+                    name="Ichimoku", value=price, signal=Signal.NEUTRAL,
+                    description="Segnale Ichimoku misto"
+                ))
+        
+        # VWAP Signal
+        vwap = self.indicators['VWAP'].iloc[-1]
+        if price < vwap * 0.97:
+            signals.append(TechnicalIndicator(
+                name="VWAP", value=vwap, signal=Signal.BUY,
+                description="Prezzo significativamente sotto VWAP"
+            ))
+        elif price > vwap * 1.03:
+            signals.append(TechnicalIndicator(
+                name="VWAP", value=vwap, signal=Signal.SELL,
+                description="Prezzo significativamente sopra VWAP"
             ))
         
         # Moving Averages Crossover
@@ -341,15 +602,27 @@ class TechnicalAnalyzer:
                 description="Allineamento ribassista delle medie mobili"
             ))
         
+        # Pattern Signals
+        bullish_patterns = [p for p in self.patterns if p.type == 'bullish']
+        bearish_patterns = [p for p in self.patterns if p.type == 'bearish']
+        
+        if len(bullish_patterns) >= 2:
+            signals.append(TechnicalIndicator(
+                name="Patterns", value=len(bullish_patterns), signal=Signal.BUY,
+                description=f"{len(bullish_patterns)} pattern rialzisti rilevati"
+            ))
+        elif len(bearish_patterns) >= 2:
+            signals.append(TechnicalIndicator(
+                name="Patterns", value=len(bearish_patterns), signal=Signal.SELL,
+                description=f"{len(bearish_patterns)} pattern ribassisti rilevati"
+            ))
+        
         self.signals = signals
         return signals
     
     def get_overall_signal(self) -> Tuple[Signal, float, str]:
         """
         Calcola un segnale complessivo basato su tutti gli indicatori
-        
-        Returns:
-            Tuple con (Segnale, Confidenza, Descrizione)
         """
         if not self.signals:
             self.generate_signals()
@@ -364,7 +637,7 @@ class TechnicalAnalyzer:
         
         total_score = sum(signal_scores[s.signal] for s in self.signals)
         max_score = len(self.signals) * 2
-        confidence = abs(total_score) / max_score * 100
+        confidence = abs(total_score) / max_score * 100 if max_score > 0 else 0
         
         if total_score >= 3:
             overall = Signal.STRONG_BUY
@@ -402,16 +675,33 @@ class TechnicalAnalyzer:
             if df['High'].iloc[i] == window['High'].max():
                 resistance_levels.append(df['High'].iloc[i])
         
+        # Aggiungi livelli Fibonacci
+        fib_levels = self.indicators.get('Fibonacci', {})
+        if fib_levels:
+            for level_name, level_value in fib_levels.items():
+                if '38.2%' in level_name or '61.8%' in level_name:
+                    support_levels.append(level_value)
+        
         # Prendi i livelli più significativi
         current_price = df['Close'].iloc[-1]
         
         supports = sorted([s for s in support_levels if s < current_price], reverse=True)[:3]
         resistances = sorted([r for r in resistance_levels if r > current_price])[:3]
         
+        # Aggiungi VWAP come supporto/resistenza dinamica
+        vwap = self.indicators.get('VWAP', pd.Series([0])).iloc[-1]
+        if vwap > 0:
+            if vwap < current_price:
+                resistances.insert(0, vwap)
+            else:
+                supports.insert(0, vwap)
+        
         return {
-            'supports': supports,
-            'resistances': resistances,
-            'current_price': current_price
+            'supports': list(set(supports))[:3],
+            'resistances': list(set(resistances))[:3],
+            'current_price': current_price,
+            'vwap': vwap,
+            'fibonacci': fib_levels
         }
 
 
