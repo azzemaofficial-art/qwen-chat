@@ -1,8 +1,5 @@
-#!/usr/bin/env python3
-"""
-Trading Advisor Pro v2.0 - Sistema avanzato di analisi e raccomandazione trading
-Combina analisi tecnica, sentiment analysis, machine learning e gestione del rischio
-"""
+# Trading Advisor Pro v3.0 - Sistema avanzato di analisi e raccomandazione trading
+# Combina analisi tecnica, sentiment analysis, machine learning, portfolio optimization e gestione del rischio
 
 import argparse
 import sys
@@ -16,12 +13,14 @@ from src.recommendation_engine import RecommendationEngine, TradeRecommendation
 from src.ml_predictor import MLPredictor
 from src.risk_management import AdvancedRiskManager
 from src.backtesting import AdvancedBacktester
+from src.portfolio_optimizer import PortfolioOptimizer, create_portfolio_from_recommendations
+from src.predictive_analytics import AdvancedMLPredictor
 
 
 def parse_arguments():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(
-        description='Trading Advisor Pro - Analisi avanzata mercati finanziari',
+        description='Trading Advisor Pro v3.0 - Analisi avanzata mercati finanziari',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Esempi:
@@ -30,6 +29,7 @@ Esempi:
   python main.py --symbol BTC-USD ETH-USD --quiet
   python main.py --symbol AAPL --export report_aapl.txt
   python main.py --symbol TSLA --ml-horizon 3d
+  python main.py --symbol AAPL GOOGL MSFT --optimize-portfolio
         """
     )
     
@@ -61,6 +61,16 @@ Esempi:
         choices=['1d', '3d', '5d'],
         default='1d',
         help='Orizzonte temporale predizione ML (default: 1d)'
+    )
+    parser.add_argument(
+        '--optimize-portfolio',
+        action='store_true',
+        help='Ottimizza portafoglio usando Modern Portfolio Theory'
+    )
+    parser.add_argument(
+        '--advanced-ml',
+        action='store_true',
+        help='Usa modelli predittivi avanzati (ensemble, feature engineering)'
     )
     
     return parser.parse_args()
