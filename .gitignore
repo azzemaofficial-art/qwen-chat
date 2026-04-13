@@ -1,63 +1,32 @@
-```
-# Python
+```gitignore
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-env/
-venv/
-.venv/
-.ENV
-.venv.bak/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
+
+# Logs
 *.log
-*.pot
-*.po
-*~
-.pytest_cache/
-.mypy_cache/
-.hypothesis/
-.eggs/
-eggs/
-parts/
-var/
-sdist/
-develop-eggs/
-.installed.cfg
-.lib/
-.wafpickle-*
-build/
-dist/
-*.egg-info/
-.egg-info/
-src/*.egg-info/
 
 # Environment variables
 .env
 .env.local
-.env.dev
-.env.test
-.env.prod
-.env.*
-!.env.example
+*.env.*
 
-# IDE
+# Coverage reports
+.coverage
+coverage/
+htmlcov/
+
+# IDE specific
 .vscode/
 .idea/
 *.swp
 *.swo
 *.tmp
 
-# OS
-.DS_Store
-Thumbs.db
+# Build artifacts
+dist/
+build/
+*.egg-info/
 ```

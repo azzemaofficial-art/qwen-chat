@@ -14,6 +14,8 @@ from src.technical_analysis import TechnicalAnalyzer
 from src.news_analyzer import NewsAnalyzer
 from src.recommendation_engine import RecommendationEngine, TradeRecommendation
 from src.ml_predictor import MLPredictor
+from src.risk_management import AdvancedRiskManager
+from src.backtesting import AdvancedBacktester
 
 
 def parse_arguments():
@@ -213,6 +215,35 @@ def analyze_symbol(
             f"ML Prediction ({ml_horizon}): {ml_prediction['prediction']} "
             f"(prob: {ml_prediction['probability']:.1%}, conf: {ml_prediction['confidence']}%)"
         )
+    
+    # 6. Analisi del Rischio Avanzata
+    if not quiet:
+        print("\n[6/6] ⚠️ Analisi avanzata del rischio...")
+    
+    risk_manager = AdvancedRiskManager()
+    risk_metrics = risk_manager.calculate_risk_metrics(df['Close'])
+    risk_rating = risk_manager.get_risk_rating(risk_metrics)
+    
+    if not quiet:
+        print(f"   ✅ Risk Rating: {risk_rating}")
+        print(f"   VaR 95%: {risk_metrics.var_95:.2%} (1 giorno)")
+        print(f"   Max Drawdown: {risk_metrics.max_drawdown:.2%}")
+        print(f"   Sharpe Ratio: {risk_metrics.sharpe_ratio:.2f}")
+    
+    # Aggiusta raccomandazione in base al rischio
+    if risk_rating in ["MOLTO_ALTO", "ALTO"]:
+        recommendation.risk_level = risk_rating.lower().replace("_", "-")
+        recommendation.leverage_suggestion = min(recommendation.leverage_suggestion, 1.0)
+        recommendation.position_size_pct = min(recommendation.position_size_pct, 10.0)
+        
+        if not quiet:
+            print(f"   ⚠️ Rischio elevato: leverage e position size ridotti")
+    
+    if not quiet:
+        print("\n" + "="*70)
+        print("📊 REPORT RISCHIO COMPLETO")
+        print("="*70)
+        print(risk_manager.format_risk_report(risk_metrics, symbol))
     
     if not quiet:
         print(engine.format_recommendation(recommendation))
