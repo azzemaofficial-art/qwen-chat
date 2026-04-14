@@ -6,7 +6,7 @@ Centralized configuration management with environment support, validation, and h
 import os
 import configparser
 from pathlib import Path
-from typing import Any, Optional, Dict
+from typing import Any, Optional, Dict, List
 from dataclasses import dataclass, field
 import logging
 

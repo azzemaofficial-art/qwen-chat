@@ -40,30 +40,60 @@ class CandlestickPattern:
 class TechnicalAnalyzer:
     """Analizzatore tecnico per identificare opportunità di trading"""
     
-    def __init__(self, df: pd.DataFrame):
+    def __init__(self, df=None):
         """
         Args:
             df: DataFrame con dati OHLCV (Open, High, Low, Close, Volume)
         """
-        self.df = df.copy()
+        self.df = df.copy() if df is not None else None
         self.signals = []
         self.indicators = {}
         self.patterns = []
         
-        if not self._validate_data():
+        if self.df is not None and not self._validate_data():
             raise ValueError("Dati non validi per l'analisi tecnica")
     
     def _validate_data(self) -> bool:
         """Valida che il DataFrame contenga i dati necessari"""
+        if self.df is None:
+            return False
         required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
         return all(col in self.df.columns for col in required_cols) and len(self.df) >= 50
     
     # === Indicatori di Trend ===
     
-    def calculate_sma(self, period: int = 20) -> pd.Series:
-        """Simple Moving Average"""
-        sma = self.df['Close'].rolling(window=period).mean()
-        self.indicators[f'SMA_{period}'] = sma
+    def calculate_sma(self, prices: Optional[pd.Series] = None, period: int = 20, window: Optional[int] = None) -> pd.Series:
+        """
+        Simple Moving Average - Media Mobile Semplice
+        
+        Args:
+            prices: Serie di prezzi opzionale (se non fornita, usa self.df['Close'])
+            period: Periodo della media mobile (default 20)
+            window: Alias per period (per compatibilità)
+            
+        Returns:
+            Serie con la SMA calcolata
+            
+        Note:
+            Supporta sia l'uso con DataFrame interno che con serie esterna
+        """
+        # Supporta alias 'window' per compatibilità
+        if window is not None:
+            period = window
+        
+        # Determina quale serie di prezzi usare
+        if prices is not None:
+            data = prices
+        elif self.df is not None:
+            data = self.df['Close']
+        else:
+            return pd.Series()
+        
+        sma = pd.Series(data).rolling(window=period).mean()
+        
+        if self.df is not None:
+            self.indicators[f'SMA_{period}'] = sma
+        
         return sma
     
     def calculate_ema(self, period: int = 20) -> pd.Series:
@@ -122,23 +152,38 @@ class TechnicalAnalyzer:
     
     def calculate_macd(
         self, 
+        prices=None,
         fast_period: int = 12, 
         slow_period: int = 26, 
         signal_period: int = 9
     ) -> Dict[str, pd.Series]:
         """
         MACD (Moving Average Convergence Divergence)
+        
+        Args:
+            prices: Serie di prezzi opzionale (se non fornita, usa self.df['Close'])
+            fast_period: Periodo EMA veloce (default 12)
+            slow_period: Periodo EMA lento (default 26)
+            signal_period: Periodo linea di segnale (default 9)
         """
-        ema_fast = self.df['Close'].ewm(span=fast_period, adjust=False).mean()
-        ema_slow = self.df['Close'].ewm(span=slow_period, adjust=False).mean()
+        # Determina quale serie di prezzi usare
+        if prices is not None:
+            data = pd.Series(prices)
+        elif self.df is not None:
+            data = self.df['Close']
+        else:
+            return {'macd': pd.Series(), 'signal': pd.Series(), 'histogram': pd.Series()}
+        
+        ema_fast = data.ewm(span=fast_period, adjust=False).mean()
+        ema_slow = data.ewm(span=slow_period, adjust=False).mean()
         
         macd_line = ema_fast - ema_slow
         signal_line = macd_line.ewm(span=signal_period, adjust=False).mean()
         histogram = macd_line - signal_line
         
         result = {
-            'macd': macd_line,
-            'signal': signal_line,
+            'macd_line': macd_line,
+            'signal_line': signal_line,
             'histogram': histogram
         }
         
@@ -175,14 +220,37 @@ class TechnicalAnalyzer:
     
     # === Indicatori di Momentum ===
     
-    def calculate_rsi(self, period: int = 14) -> pd.Series:
-        """Relative Strength Index"""
-        delta = self.df['Close'].diff()
+    def calculate_rsi(self, prices: Optional[pd.Series] = None, period: int = 14, window: Optional[int] = None) -> pd.Series:
+        """Relative Strength Index
+        
+        Args:
+            prices: Serie di prezzi opzionale (se non fornita, usa self.df['Close'])
+            period: Periodo per il calcolo (default 14)
+            window: Alias per period (per compatibilità)
+        """
+        if window is not None:
+            period = window
+        if prices is not None:
+            data = prices
+        elif self.df is not None:
+            data = self.df['Close']
+        else:
+            return pd.Series()
+        
+        data = pd.Series(data)
+        delta = data.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
         
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
+        
+        # Riempie i NaN iniziali con bfill per garantire che tutti i valori siano validi
+        # Questo è necessario perché i primi 'period' valori sono NaN a causa del rolling window
+        rsi = rsi.bfill()
+        
+        # Clamp tra 0 e 100 per garantire che l'RSI sia sempre nel range corretto
+        rsi = rsi.clip(0, 100)
         
         self.indicators['RSI'] = rsi
         return rsi
@@ -225,20 +293,47 @@ class TechnicalAnalyzer:
     # === Indicatori di Volatilità ===
     
     def calculate_bollinger_bands(
-        self, 
-        period: int = 20, 
-        std_dev: float = 2.0
+        self,
+        prices=None,
+        period: int = 20,
+        std_dev: float = 2.0,
+        window=None
     ) -> Dict[str, pd.Series]:
-        """Bollinger Bands"""
-        sma = self.df['Close'].rolling(window=period).mean()
-        std = self.df['Close'].rolling(window=period).std()
+        """Bollinger Bands - Bande di volatilità
         
+        Args:
+            prices: Serie di prezzi opzionale
+            period: Periodo (default 20)
+            std_dev: Deviazioni standard (default 2.0)
+            window: Alias per period
+        """
+        if window is not None:
+            period = window
+        if prices is not None:
+            data = prices
+        elif self.df is not None:
+            data = self.df['Close']
+        else:
+            return {'upper': pd.Series(), 'middle': pd.Series(), 'lower': pd.Series(), 'bandwidth': pd.Series(), 'percent_b': pd.Series()}
+        
+        data = pd.Series(data)
+        sma = data.rolling(window=period).mean()
+        std = data.rolling(window=period).std()
         upper = sma + (std * std_dev)
         lower = sma - (std * std_dev)
         
         # Bandwidth e %B
         bandwidth = (upper - lower) / sma * 100
-        percent_b = (self.df['Close'] - lower) / (upper - lower)
+        # Usa 'data' invece di 'self.df['Close']' per supportare prezzi esterni
+        percent_b = (data - lower) / (upper - lower)
+        
+        # Riempie i NaN iniziali con ffill per garantire che tutti i valori siano validi
+        # Questo è necessario perché i primi 'period' valori sono NaN a causa del rolling window
+        upper = upper.bfill()
+        sma = sma.bfill()
+        lower = lower.bfill()
+        bandwidth = bandwidth.bfill()
+        percent_b = percent_b.bfill()
         
         result = {
             'upper': upper,

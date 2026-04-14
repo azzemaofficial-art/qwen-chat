@@ -37,6 +37,57 @@ class AdvancedRiskManager:
         """
         self.risk_free_rate = risk_free_rate
     
+    def calculate_var(
+        self, 
+        returns: pd.Series, 
+        confidence_level: float = 0.95,
+        method: str = 'historical'
+    ) -> float:
+        """
+        Calcola Value at Risk
+        
+        Args:
+            returns: Serie dei rendimenti
+            confidence_level: Livello di confidenza (es. 0.95 per 95%)
+            method: Metodo di calcolo ('historical', 'parametric', 'monte_carlo')
+        
+        Returns:
+            VaR come valore positivo (perdita potenziale)
+        """
+        if method == 'historical':
+            var = self.calculate_var_historical(returns, confidence_level)
+        elif method == 'parametric':
+            var = self.calculate_var_parametric(returns, confidence_level)
+        elif method == 'monte_carlo':
+            var = self.calculate_var_monte_carlo(returns, confidence_level)
+        else:
+            var = self.calculate_var_historical(returns, confidence_level)
+        
+        # Ritorna il valore assoluto (positivo) per rappresentare la perdita
+        return abs(var)
+    
+    def calculate_cvar(
+        self, 
+        returns: pd.Series, 
+        confidence_level: float = 0.95
+    ) -> float:
+        """
+        Calcola Conditional Value at Risk (Expected Shortfall)
+        
+        Args:
+            returns: Serie dei rendimenti
+            confidence_level: Livello di confidenza
+        
+        Returns:
+            CVaR/Expected Shortfall come valore positivo
+        """
+        var = self.calculate_var(returns, confidence_level, method='historical')
+        # Recalcola il VaR storico negativo per trovare i valori sotto la soglia
+        var_neg = self.calculate_var_historical(returns, confidence_level)
+        cvar = returns[returns <= var_neg].mean()
+        # Ritorna il valore assoluto (positivo) - CVaR è sempre maggiore di VaR
+        return abs(cvar) if not np.isnan(cvar) else var
+    
     def calculate_returns(self, prices: pd.Series) -> pd.Series:
         """Calcola i rendimenti logaritmici"""
         return np.log(prices / prices.shift(1)).dropna()
