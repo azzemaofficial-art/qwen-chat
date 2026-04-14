@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  trading-advisor:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: trading-advisor-pro
+    volumes:
+      - ../data:/app/data
+      - ../logs:/app/logs
+      - ../config:/app/config
+    environment:
+      - TAP_GENERAL_ENVIRONMENT=production
+      - TAP_GENERAL_LOG_LEVEL=INFO
+      - TAP_TRADING_DEFAULT_CAPITAL=10000
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  # Optional: Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: trading-redis
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  # Optional: PostgreSQL for persistent storage
+  postgres:
+    image: postgres:15-alpine
+    container_name: trading-postgres
+    environment:
+      POSTGRES_DB: trading_advisor
+      POSTGRES_USER: tap_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - trading-network
+    ports:
+      - "5432:5432"
+
+volumes:
+  redis-data:
+  postgres-data:
+
+networks:
+  trading-network:
+    driver: bridge

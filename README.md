@@ -1,9 +1,27 @@
-# 🚀 TRADING ADVISOR PRO v5.0 - GALACTIC EDITION
+# 🚀 TRADING ADVISOR PRO v6.0 - ENTERPRISE EDITION
 
-![Version](https://img.shields.io/badge/version-5.0-galactic)
-![Lines of Code](https://img.shields.io/badge/lines-8097-blue)
-![Modules](https://img.shields.io/badge/modules-16-orange)
+![Version](https://img.shields.io/badge/version-6.0-enterprise)
+![Lines of Code](https://img.shields.io/badge/lines-10000+-blue)
+![Modules](https://img.shields.io/badge/modules-18-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
+![CI/CD](https://github.com/trading-advisor-pro/trading-advisor-pro/workflows/CI%2FCD/badge.svg)
+![Docker](https://img.shields.io/badge/docker-ready-blue)
+
+## ⭐ NOVA VERSIONE v6.0 ENTERPRISE!
+
+Questa versione include **NUOVE FUNZIONALITÀ PROFESSIONALI**:
+- ✅ **Configurazione Centralizzata** - Gestione settings con validazione
+- ✅ **Logging Enterprise** - Audit trail, JSON logging, performance tracking
+- ✅ **Test Suite Completa** - Unit test, integration test, performance test
+- ✅ **CI/CD Pipeline** - GitHub Actions per deploy automatico
+- ✅ **Docker Support** - Containerizzazione production-ready
+- ✅ **Documentazione Estesa** - Guide complete per deployment
+
+📖 Vedi `/docs/README_ENTERPRISE.md` per la documentazione completa della v6.0!
+
+---
+
+# 🚀 TRADING ADVISOR PRO v5.0 - GALACTIC EDITION
 
 ## 🌟 OVERVIEW
 
