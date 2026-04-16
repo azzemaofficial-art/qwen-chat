@@ -1,0 +1,36 @@
+apiVersion: v2
+name: trading-advisor-pro
+description: A Helm chart for Trading Advisor Pro v7.0 - Quantum AI Edition
+type: application
+version: 7.0.0
+appVersion: "7.0.0"
+keywords:
+  - trading
+  - ai
+  - machine-learning
+  - defi
+  - cryptocurrency
+  - finance
+home: https://tradingadvisorpro.com
+sources:
+  - https://github.com/trading-advisor-pro/tap
+maintainers:
+  - name: Trading Advisor Pro Team
+    email: team@tradingadvisorpro.com
+dependencies:
+  - name: postgresql
+    version: 12.5.0
+    repository: https://charts.bitnami.com/bitnami
+    condition: database.enabled
+  - name: redis
+    version: 17.11.0
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled
+  - name: prometheus
+    version: 25.20.0
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: monitoring.enabled
+  - name: grafana
+    version: 6.50.0
+    repository: https://grafana.github.io/helm-charts
+    condition: monitoring.enabled
