@@ -4,9 +4,11 @@ Combina analisi tecnica, sentiment e fattori di rischio per generare consigli pr
 """
 
 from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from datetime import datetime
 import numpy as np
+import json
 
 
 class ActionType(Enum):
@@ -35,6 +37,16 @@ class TradeRecommendation:
     technical_score: float
     sentiment_score: float
     overall_score: float
+    # Campi per il sistema di voto
+    recommendation_id: str = field(default_factory=lambda: "")
+    created_at: datetime = field(default_factory=datetime.now)
+    user_rating: Optional[int] = None  # Voto utente 1-5 (5 = perfetto per imparare e fare trading)
+    rating_criteria: Dict[str, int] = field(default_factory=dict)  # Criteri dettagliati
+    rating_notes: str = ""
+    actual_outcome: Optional[Dict] = None  # Risultato effettivo del trade
+    is_speculative: bool = False  # Indica se il titolo è speculativo in questo momento
+    speculation_reasons: List[str] = field(default_factory=list)  # Motivi della speculazione
+    learning_points: List[str] = field(default_factory=list)  # Punti educativi da imparare
 
 
 class RiskManager:
@@ -132,6 +144,22 @@ class RecommendationEngine:
         """
         self.capital = capital
         self.risk_manager = RiskManager()
+        self.recommendations_history: List[TradeRecommendation] = []
+        self.rating_criteria_definitions = {
+            "accuratezza_prezzo": "Accuratezza del prezzo di ingresso",
+            "tempistica": "Tempistica dell'operazione",
+            "gestione_rischio": "Qualità della gestione del rischio (stop loss/take profit)",
+            "chiarezza": "Chiarezza delle motivazioni fornite",
+            "performance": "Performance effettiva del trade"
+        }
+        # Criteri avanzati per voto complesso 6/5 (perfetto per trading e apprendimento)
+        self.advanced_criteria = {
+            "potenziale_profitto": "Potenziale di profitto dell'operazione",
+            "qualita_setup": "Qualità del setup tecnico",
+            "apprendimento": "Valore educativo dell'operazione",
+            "gestione_emotiva": "Gestione dello stress emotivo richiesto",
+            "timing_mercato": "Timing rispetto alle condizioni di mercato"
+        }
     
     def analyze_technical_signals(
         self,
@@ -268,7 +296,7 @@ class RecommendationEngine:
         current_price: float
     ) -> TradeRecommendation:
         """
-        Genera una raccomandazione completa di trading
+        Genera una raccomandazione completa di trading con analisi speculativa e punti educativi
         
         Args:
             symbol: Simbolo del titolo
@@ -277,9 +305,9 @@ class RecommendationEngine:
             current_price: Prezzo corrente
         
         Returns:
-            TradeRecommendation completa
+            TradeRecommendation completa con valutazione speculativa e apprendimento
         """
-        print(f"\nGenerazione raccomandazione per {symbol}...")
+        print(f"\n🔍 Generazione raccomandazione per {symbol}...")
         
         # Analizza segnali
         tech_score, tech_reasons = self.analyze_technical_signals(technical_data)
@@ -345,6 +373,16 @@ class RecommendationEngine:
         # Unisci tutte le ragioni
         all_reasons = tech_reasons + sent_reasons
         
+        # Analisi speculativa avanzata
+        is_speculative, speculation_reasons = self._analyze_speculation_opportunity(
+            symbol, technical_data, news_data, current_price
+        )
+        
+        # Genera punti educativi basati sul setup
+        learning_points = self._generate_learning_points(
+            symbol, action, technical_data, news_data, is_speculative
+        )
+        
         recommendation = TradeRecommendation(
             symbol=symbol,
             action=action,
@@ -360,18 +398,388 @@ class RecommendationEngine:
             reasoning=all_reasons,
             technical_score=round(tech_score, 1),
             sentiment_score=round(sent_score, 1),
-            overall_score=round(overall_score, 1)
+            overall_score=round(overall_score, 1),
+            is_speculative=is_speculative,
+            speculation_reasons=speculation_reasons,
+            learning_points=learning_points
         )
+        
+        import uuid
+        recommendation.recommendation_id = str(uuid.uuid4())[:8]
+        self.recommendations_history.append(recommendation)
         
         return recommendation
     
-    def format_recommendation(self, rec: TradeRecommendation) -> str:
-        """Formatta la raccomandazione per la visualizzazione"""
+    def _analyze_speculation_opportunity(
+        self,
+        symbol: str,
+        technical_data: Dict,
+        news_data: Dict,
+        current_price: float
+    ) -> Tuple[bool, List[str]]:
+        """
+        Analizza se un titolo è speculativo nel momento attuale
+        
+        Returns:
+            Tuple con (è speculativo, lista di motivi)
+        """
+        speculation_reasons = []
+        is_speculative = False
+        
+        # Controlla volatilità elevata
+        volatility = technical_data.get('volatility', 0)
+        if volatility > 0.4:  # >40% volatilità annuale
+            is_speculative = True
+            speculation_reasons.append(f"Alta volatilità ({volatility*100:.1f}%)")
+        
+        # Controlla RSI estremo
+        rsi = technical_data.get('rsi', 50)
+        if rsi < 25 or rsi > 75:
+            is_speculative = True
+            level = "ipervenduto" if rsi < 25 else "ipercomprato"
+            speculation_reasons.append(f"RSI in zona estrema ({rsi:.1f} - {level})")
+        
+        # Controlla volume anomalo
+        avg_volume = technical_data.get('avg_volume', 0)
+        current_volume = technical_data.get('current_volume', 0)
+        if avg_volume > 0 and current_volume > avg_volume * 2:
+            is_speculative = True
+            speculation_reasons.append(f"Volume esploso ({current_volume/avg_volume:.1f}x la media)")
+        
+        # Controlla notizie molto positive/negative
+        very_positive = news_data.get('very_positive_count', 0)
+        very_negative = news_data.get('very_negative_count', 0)
+        total_articles = news_data.get('articles_count', 0)
+        
+        if total_articles > 0:
+            extreme_ratio = (very_positive + very_negative) / total_articles
+            if extreme_ratio > 0.6:
+                is_speculative = True
+                speculation_reasons.append(f"Alto impatto emotivo dalle notizie ({extreme_ratio*100:.0f}% articoli estremi)")
+        
+        # Controlla breakout/breakdown recenti
+        ma_trend = technical_data.get('ma_trend', 'neutral')
+        if ma_trend == 'bullish' and technical_data.get('recent_breakout', False):
+            is_speculative = True
+            speculation_reasons.append("Breakout rialzista recente - opportunità speculativa")
+        elif ma_trend == 'bearish' and technical_data.get('recent_breakdown', False):
+            is_speculative = True
+            speculation_reasons.append("Breakdown ribassista recente - opportunità speculativa")
+        
+        # Controlla divergenze
+        if technical_data.get('rsi_divergence', False):
+            is_speculative = True
+            speculation_reasons.append("Divergenza RSI rilevata - possibile inversione")
+        
+        # Controlla gap di prezzo
+        if technical_data.get('price_gap', 0) > 0.05:  # Gap > 5%
+            is_speculative = True
+            speculation_reasons.append(f"Gap di prezzo significativo ({technical_data.get('price_gap', 0)*100:.1f}%)")
+        
+        return is_speculative, speculation_reasons
+    
+    def _generate_learning_points(
+        self,
+        symbol: str,
+        action: ActionType,
+        technical_data: Dict,
+        news_data: Dict,
+        is_speculative: bool
+    ) -> List[str]:
+        """
+        Genera punti educativi basati sul setup di trading
+        
+        Returns:
+            Lista di punti educativi da imparare
+        """
+        learning_points = []
+        
+        # Punti basati sull'azione
+        if action in [ActionType.STRONG_BUY, ActionType.BUY]:
+            learning_points.append("✅ Impara: Identificare setup rialzisti con conferme multiple")
+            learning_points.append("📚 Lezione: Il timing di ingresso è cruciale - aspetta pullback su supporti")
+        elif action in [ActionType.STRONG_SELL, ActionType.SELL]:
+            learning_points.append("⚠️ Impara: Riconoscere segnali di debolezza prima che il trend si inverta")
+            learning_points.append("📚 Lezione: Proteggi i profitti - usa trailing stop in trend ribassisti")
+        else:
+            learning_points.append("⏳ Impara: La pazienza è una virtù - non forzare trade quando i segnali sono confusi")
+            learning_points.append("📚 Lezione: A volte la migliore operazione è non operare")
+        
+        # Punti basati sulla gestione del rischio
+        rsi = technical_data.get('rsi', 50)
+        if rsi < 30:
+            learning_points.append("💡 Gestione rischio: In ipervenduto, scala gli ingressi per ridurre il rischio")
+        elif rsi > 70:
+            learning_points.append("💡 Gestione rischio: In ipercomprato, considera prese di profitto parziali")
+        
+        # Punti basati sulla speculazione
+        if is_speculative:
+            learning_points.append("🎯 Speculazione: Alta ricompensa = alto rischio - riduci la size della posizione")
+            learning_points.append("🧠 Psicologia: Nelle trade speculative, gestisci le emozioni - non FOMO!")
+            learning_points.append("⚡ Strategia: Usa stop loss stretti nelle operazioni speculative")
+        else:
+            learning_points.append("🛡️ Trading conservativo: Setup ad alta probabilità richiedono pazienza")
+        
+        # Punti basati sul sentiment
+        sentiment = news_data.get('overall_sentiment', 0)
+        if abs(sentiment) > 0.7:
+            learning_points.append("📰 Sentiment: Quando il sentiment è estremo, preparati per possibili reversal")
+        
+        # Punti sulla diversificazione
+        learning_points.append("🔄 Ricorda: Non mettere mai più del 2-5% del capitale in una singola trade rischiosa")
+        
+        return learning_points
+    
+    def rate_recommendation(
+        self,
+        recommendation_id: str,
+        overall_rating: int,
+        criteria_ratings: Optional[Dict[str, int]] = None,
+        notes: str = "",
+        actual_outcome: Optional[Dict] = None,
+        advanced_criteria_ratings: Optional[Dict[str, int]] = None
+    ) -> bool:
+        """
+        Assegna un voto complesso da 1 a 5 (con possibilità di 6/5 per performance eccezionali)
+        Perfetto per trading e apprendimento simultaneo
+        
+        Args:
+            recommendation_id: ID della raccomandazione da votare
+            overall_rating: Voto complessivo da 1 a 5 (5 = perfetto, uso eccezionale può essere considerato 6/5)
+            criteria_ratings: Voti per criteri specifici base (opzionale)
+                - accuratezza_prezzo: Accuratezza del prezzo di ingresso (1-5)
+                - tempistica: Tempistica dell'operazione (1-5)
+                - gestione_rischio: Qualità stop loss/take profit (1-5)
+                - chiarezza: Chiarezza delle motivazioni (1-5)
+                - performance: Performance effettiva (1-5)
+            notes: Note aggiuntive sul voto
+            actual_outcome: Risultato effettivo del trade
+                Esempio: {"exit_price": 180.0, "profit_loss_pct": 2.5, "exit_date": "2024-01-15"}
+            advanced_criteria_ratings: Voti per criteri avanzati (opzionale)
+                - potenziale_profitto: Potenziale di profitto (1-5)
+                - qualita_setup: Qualità del setup tecnico (1-5)
+                - apprendimento: Valore educativo (1-5)
+                - gestione_emotiva: Gestione stress emotivo (1-5)
+                - timing_mercato: Timing condizioni di mercato (1-5)
+        
+        Returns:
+            True se il voto è stato assegnato con successo, False altrimenti
+        """
+        # Supporta voto 6 come "perfetto oltre l'eccellenza" ma lo memorizza come 5 con bonus flag
+        display_rating = overall_rating
+        is_perfect_plus = overall_rating >= 6
+        
+        if not 1 <= overall_rating <= 6:
+            print(f"❌ Errore: Il voto deve essere tra 1 e 6 (6 = perfetto+), ricevuto {overall_rating}")
+            return False
+        
+        # Trova la raccomandazione
+        rec = self._find_recommendation(recommendation_id)
+        if not rec:
+            print(f"❌ Errore: Raccomandazione con ID {recommendation_id} non trovata")
+            return False
+        
+        # Assegna voto complessivo (max 5 nel storage, ma tracciamo se era 6)
+        rec.user_rating = min(5, overall_rating)
+        rec.rating_notes = notes
+        if is_perfect_plus:
+            rec.rating_notes += " [VOTO 6/5 - PERFORMANCE ECCEZIONALE!]"
+        
+        # Assegna voti per criteri base (se forniti)
+        if criteria_ratings:
+            valid_criteria = set(self.rating_criteria_definitions.keys())
+            for criterion, rating in criteria_ratings.items():
+                if criterion in valid_criteria:
+                    if 1 <= rating <= 5:
+                        rec.rating_criteria[criterion] = rating
+                    else:
+                        print(f"⚠️  Avviso: Voto {rating} per '{criterion}' non valido (deve essere 1-5), ignorato")
+                else:
+                    print(f"⚠️  Avviso: Criterio '{criterion}' non riconosciuto, ignorato")
+        
+        # Assegna voti per criteri avanzati (se forniti)
+        if advanced_criteria_ratings:
+            valid_advanced = set(self.advanced_criteria.keys())
+            for criterion, rating in advanced_criteria_ratings.items():
+                if criterion in valid_advanced:
+                    if 1 <= rating <= 5:
+                        rec.rating_criteria[f"adv_{criterion}"] = rating
+                    else:
+                        print(f"⚠️  Avviso: Voto {rating} per '{criterion}' non valido (deve essere 1-5), ignorato")
+                else:
+                    print(f"⚠️  Avviso: Criterio avanzato '{criterion}' non riconosciuto, ignorato")
+        
+        # Registra risultato effettivo (se fornito)
+        if actual_outcome:
+            rec.actual_outcome = actual_outcome
+        
+        # Stampa feedback visivo avanzato
+        print(f"\n{'🏆' if is_perfect_plus else '✅'} Voto assegnato con successo alla raccomandazione {recommendation_id}")
+        stars = '⭐' * min(5, overall_rating)
+        if is_perfect_plus:
+            stars += ' 🌟'
+        print(f"   Voto complessivo: {stars} ({display_rating}/5 {'- PERFETTO+!' if is_perfect_plus else ''})")
+        
+        if rec.rating_criteria:
+            print(f"   📊 Voti per criterio:")
+            # Criteri base
+            for criterion, rating in rec.rating_criteria.items():
+                if not criterion.startswith("adv_"):
+                    criterion_label = self.rating_criteria_definitions.get(criterion, criterion)
+                    print(f"     • {criterion_label}: {'⭐' * rating} ({rating}/5)")
+            # Criteri avanzati
+            for criterion, rating in rec.rating_criteria.items():
+                if criterion.startswith("adv_"):
+                    base_name = criterion.replace("adv_", "")
+                    criterion_label = self.advanced_criteria.get(base_name, base_name)
+                    print(f"     🔹 {criterion_label}: {'⭐' * rating} ({rating}/5)")
+        
+        if notes:
+            print(f"   📝 Note: {notes}")
+        
+        # Mostra punti di apprendimento se presenti
+        if rec.learning_points:
+            print(f"\n   💡 Punti educativi da questa raccomandazione:")
+            for point in rec.learning_points[:3]:  # Mostra primi 3
+                print(f"     {point}")
+        
+        return True
+    
+    def _find_recommendation(self, recommendation_id: str) -> Optional[TradeRecommendation]:
+        """Trova una raccomandazione per ID"""
+        for rec in self.recommendations_history:
+            if rec.recommendation_id == recommendation_id:
+                return rec
+        return None
+    
+    def get_rating_statistics(self) -> Dict:
+        """
+        Calcola statistiche dettagliate sui voti
+        
+        Returns:
+            Dizionario con statistiche complete sui voti
+        """
+        rated_recs = [r for r in self.recommendations_history if r.user_rating is not None]
+        
+        if not rated_recs:
+            return {"message": "Nessuna raccomandazione votata ancora"}
+        
+        total = len(rated_recs)
+        avg_overall = sum(r.user_rating for r in rated_recs) / total
+        
+        # Distribuzione voti
+        rating_distribution = {i: 0 for i in range(1, 6)}
+        for r in rated_recs:
+            rating_distribution[r.user_rating] += 1
+        
+        # Statistiche per criterio
+        criteria_stats = {}
+        for criterion in self.rating_criteria_definitions.keys():
+            ratings = [r.rating_criteria.get(criterion) for r in rated_recs if r.rating_criteria.get(criterion) is not None]
+            if ratings:
+                criteria_stats[criterion] = {
+                    "media": round(sum(ratings) / len(ratings), 2),
+                    "conteggio": len(ratings),
+                    "min": min(ratings),
+                    "max": max(ratings)
+                }
+        
+        # Top raccomandazioni
+        top_rated = sorted(rated_recs, key=lambda x: x.user_rating, reverse=True)[:5]
+        
+        # Statistiche performance (se disponibili)
+        performance_stats = None
+        recs_with_outcome = [r for r in rated_recs if r.actual_outcome]
+        if recs_with_outcome:
+            profits = [r.actual_outcome.get('profit_loss_pct', 0) for r in recs_with_outcome]
+            performance_stats = {
+                "trades_conclusi": len(recs_with_outcome),
+                "profit medio %": round(sum(profits) / len(profits), 2),
+                "trade vincenti": sum(1 for p in profits if p > 0),
+                "trade perdenti": sum(1 for p in profits if p < 0)
+            }
+        
+        return {
+            "totale_votati": total,
+            "voto_medio": round(avg_overall, 2),
+            "distribuzione": rating_distribution,
+            "statistiche_criteri": criteria_stats,
+            "top_rated": [
+                {
+                    "id": r.recommendation_id,
+                    "symbol": r.symbol,
+                    "voto": r.user_rating,
+                    "azione": r.action.value
+                }
+                for r in top_rated
+            ],
+            "performance": performance_stats
+        }
+    
+    def export_ratings_to_json(self, filename: str = "ratings_export.json") -> str:
+        """
+        Esporta tutti i voti e le raccomandazioni in un file JSON
+        
+        Args:
+            filename: Nome del file di output
+        
+        Returns:
+            Percorso del file creato
+        """
+        rated_recs = [r for r in self.recommendations_history if r.user_rating is not None]
+        
+        export_data = {
+            "export_date": datetime.now().isoformat(),
+            "totale_votati": len(rated_recs),
+            "raccomandazioni": []
+        }
+        
+        for rec in rated_recs:
+            rec_data = {
+                "id": rec.recommendation_id,
+                "symbol": rec.symbol,
+                "azione": rec.action.value,
+                "data_creazione": rec.created_at.isoformat(),
+                "voto_complessivo": rec.user_rating,
+                "voti_criteri": rec.rating_criteria,
+                "note": rec.rating_notes,
+                "risultato_effettivo": rec.actual_outcome,
+                "dettagli_originali": {
+                    "confidence": rec.confidence,
+                    "entry_price": rec.entry_price,
+                    "stop_loss": rec.stop_loss,
+                    "take_profit_1": rec.take_profit_1,
+                    "technical_score": rec.technical_score,
+                    "sentiment_score": rec.sentiment_score
+                }
+            }
+            export_data["raccomandazioni"].append(rec_data)
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(export_data, f, indent=2, ensure_ascii=False)
+        
+        print(f"✅ Dati esportati con successo in {filename}")
+        return filename
+    
+    def format_recommendation(self, rec: TradeRecommendation, show_rating_info: bool = True) -> str:
+        """Formatta la raccomandazione per la visualizzazione con info speculative e educative"""
         output = f"""
 {'='*60}
 RACCOMANDAZIONE TRADING: {rec.symbol}
 {'='*60}
-
+ID: {rec.recommendation_id}
+Data creazione: {rec.created_at.strftime('%Y-%m-%d %H:%M:%S')}
+"""
+        
+        # Badge speculativo se applicabile
+        if rec.is_speculative:
+            output += f"""
+🎯 OPPORTUNITÀ SPECULATIVA RILEVATA!
+   Motivi: {', '.join(rec.speculation_reasons[:3])}
+   ⚠️ Attenzione: Alto rischio/alto rendimento potenziale
+"""
+        
+        output += f"""
 📊 AZIONE CONSIGLIATA: {rec.action.value}
    Confidenza: {rec.confidence}%
 
@@ -397,16 +805,119 @@ RACCOMANDAZIONE TRADING: {rec.symbol}
         for i, reason in enumerate(rec.reasoning, 1):
             output += f"   {i}. {reason}\n"
         
+        # Mostra punti educativi
+        if rec.learning_points:
+            output += "\n💡 PUNTI EDUCATIVI (IMPARA MENTRE FAI TRADING):\n"
+            for point in rec.learning_points:
+                output += f"   {point}\n"
+        
+        # Mostra informazioni sul voto se presente
+        if show_rating_info and rec.user_rating is not None:
+            is_perfect_plus = "[VOTO 6/5 - PERFORMANCE ECCEZIONALE!]" in rec.rating_notes
+            trophy = "🏆" if is_perfect_plus else ""
+            output += f"""
+{trophy}⭐ VOTO UTENTE: {'⭐' * rec.user_rating}{' 🌟' if is_perfect_plus else ''} ({rec.user_rating}/5{'+ PERFETTO!' if is_perfect_plus else ''})
+"""
+            if rec.rating_criteria:
+                output += "   📊 Dettagli voto:\n"
+                # Criteri base
+                for criterion, rating in rec.rating_criteria.items():
+                    if not criterion.startswith("adv_"):
+                        criterion_label = self.rating_criteria_definitions.get(criterion, criterion)
+                        output += f"     • {criterion_label}: {'⭐' * rating} ({rating}/5)\n"
+                # Criteri avanzati
+                for criterion, rating in rec.rating_criteria.items():
+                    if criterion.startswith("adv_"):
+                        base_name = criterion.replace("adv_", "")
+                        criterion_label = self.advanced_criteria.get(base_name, base_name)
+                        output += f"     🔹 {criterion_label}: {'⭐' * rating} ({rating}/5)\n"
+            
+            if rec.rating_notes:
+                output += f"   📝 Note: {rec.rating_notes}\n"
+            
+            if rec.actual_outcome:
+                outcome = rec.actual_outcome
+                output += f"   Risultato effettivo:\n"
+                if 'exit_price' in outcome:
+                    output += f"     - Prezzo di uscita: ${outcome['exit_price']}\n"
+                if 'profit_loss_pct' in outcome:
+                    pl = outcome['profit_loss_pct']
+                    emoji = "📈" if pl > 0 else "📉" if pl < 0 else "➡️"
+                    output += f"     {emoji} Profitto/Perdita: {pl:+.2f}%\n"
+                if 'exit_date' in outcome:
+                    output += f"     - Data chiusura: {outcome['exit_date']}\n"
+        
         output += f"""
 ⚠️ DISCLAIMER: Questa è solo analisi tecnica/statistica.
    Il trading comporta rischi. Fai sempre le tue ricerche.
 {'='*60}
 """
         return output
+    
+    def get_speculative_opportunities(self) -> List[TradeRecommendation]:
+        """
+        Restituisce tutte le raccomandazioni che sono opportunità speculative
+        
+        Returns:
+            Lista di raccomandazioni speculative
+        """
+        return [r for r in self.recommendations_history if r.is_speculative]
+    
+    def print_speculative_alert(self, symbol: str) -> str:
+        """
+        Genera un alert per titoli speculativi nel momento attuale
+        
+        Args:
+            symbol: Simbolo del titolo da controllare
+        
+        Returns:
+            Stringa formattata con l'alert speculativo
+        """
+        rec = None
+        for r in self.recommendations_history:
+            if r.symbol == symbol and r.is_speculative:
+                rec = r
+                break
+        
+        if not rec:
+            return f"❌ Nessuna opportunità speculativa trovata per {symbol}"
+        
+        output = f"""
+{'='*60}
+🎯 ALERT SPECULAZIONE: {symbol}
+{'='*60}
+⚡ OPPORTUNITÀ SPECULATIVA ATTIVA!
+
+📋 MOTIVI DELLA SPECULAZIONE:
+"""
+        for i, reason in enumerate(rec.speculation_reasons, 1):
+            output += f"   {i}. {reason}\n"
+        
+        output += f"""
+💡 CONSIGLI PER QUESTA TRADE SPECULATIVA:
+   • Riduci la dimensione della posizione (max 1-2% del capitale)
+   • Usa stop loss stretti
+   • Prendi profitti parziali rapidamente
+   • Non farti prendere dal FOMO!
+
+📊 DETTAGLI OPERATIVI:
+   Azione: {rec.action.value}
+   Prezzo ingresso: ${rec.entry_price}
+   Stop Loss: ${rec.stop_loss}
+   Take Profit 1: ${rec.take_profit_1}
+   
+🧠 RICORDA: Le trade speculative sono ad alto rischio!
+{'='*60}
+"""
+        return output
 
 
 if __name__ == "__main__":
-    # Test con dati simulati
+    # Test completo del sistema di voto complesso
+    print("=" * 60)
+    print("TRADING ADVISOR PRO v5.0 - SISTEMA DI VOTO COMPLESSO")
+    print("=" * 60)
+    
     engine = RecommendationEngine(capital=50000)
     
     technical_data = {
@@ -432,11 +943,117 @@ if __name__ == "__main__":
         'very_negative_count': 1
     }
     
-    rec = engine.generate_recommendation(
+    # Genera prima raccomandazione
+    print("\n📌 Generazione prima raccomandazione (AAPL)...")
+    rec1 = engine.generate_recommendation(
         symbol="AAPL",
         technical_data=technical_data,
         news_data=news_data,
         current_price=175.0
     )
+    print(engine.format_recommendation(rec1))
     
-    print(engine.format_recommendation(rec))
+    # Genera seconda raccomandazione
+    print("\n📌 Generazione seconda raccomandazione (TSLA)...")
+    technical_data['rsi'] = 25
+    technical_data['overall_signal']['confidence'] = 85
+    rec2 = engine.generate_recommendation(
+        symbol="TSLA",
+        technical_data=technical_data,
+        news_data=news_data,
+        current_price=250.0
+    )
+    print(engine.format_recommendation(rec2))
+    
+    # Test del sistema di voto complesso
+    print("\n" + "=" * 60)
+    print("TEST SISTEMA DI VOTO COMPLESSO")
+    print("=" * 60)
+    
+    # Vota la prima raccomandazione con voti dettagliati
+    print(f"\n⭐ Votazione raccomandazione {rec1.recommendation_id} (AAPL)...")
+    engine.rate_recommendation(
+        recommendation_id=rec1.recommendation_id,
+        overall_rating=4,
+        criteria_ratings={
+            "accuratezza_prezzo": 5,
+            "tempistica": 4,
+            "gestione_rischio": 4,
+            "chiarezza": 5,
+            "performance": 3
+        },
+        notes="Buona analisi tecnica, prezzo di ingresso preciso",
+        actual_outcome={
+            "exit_price": 182.0,
+            "profit_loss_pct": 4.0,
+            "exit_date": "2024-01-15"
+        }
+    )
+    
+    # Vota la seconda raccomandazione
+    print(f"\n⭐ Votazione raccomandazione {rec2.recommendation_id} (TSLA)...")
+    engine.rate_recommendation(
+        recommendation_id=rec2.recommendation_id,
+        overall_rating=5,
+        criteria_ratings={
+            "accuratezza_prezza": 5,
+            "tempistica": 5,
+            "gestione_rischio": 5,
+            "chiarezza": 4,
+            "performance": 5
+        },
+        notes="Eccellente! Segnale perfetto con ottimo profitto",
+        actual_outcome={
+            "exit_price": 275.0,
+            "profit_loss_pct": 10.0,
+            "exit_date": "2024-01-20"
+        }
+    )
+    
+    # Mostra statistiche
+    print("\n" + "=" * 60)
+    print("STATISTICHE VOTI")
+    print("=" * 60)
+    stats = engine.get_rating_statistics()
+    
+    print(f"\n📊 Totale raccomandazioni votate: {stats['totale_votati']}")
+    print(f"⭐ Voto medio: {stats['voto_medio']}/5")
+    print(f"\n📈 Distribuzione voti:")
+    for voto, conteggio in stats['distribuzione'].items():
+        barre = "█" * conteggio
+        print(f"   {voto} stelle: {barre} ({conteggio})")
+    
+    if stats['statistiche_criteri']:
+        print(f"\n📋 Statistiche per criterio:")
+        for criterio, dati in stats['statistiche_criteri'].items():
+            criterio_label = engine.rating_criteria_definitions.get(criterio, criterio)
+            print(f"   {criterio_label}:")
+            print(f"     Media: {dati['media']}/5 | Min: {dati['min']} | Max: {dati['max']} | Campioni: {dati['conteggio']}")
+    
+    if stats['top_rated']:
+        print(f"\n🏆 Top raccomandazioni:")
+        for i, top in enumerate(stats['top_rated'], 1):
+            print(f"   {i}. {top['symbol']} ({top['id']}): {'⭐' * top['voto']} ({top['voto']}/5) - {top['azione']}")
+    
+    if stats['performance']:
+        perf = stats['performance']
+        print(f"\n💰 Performance trades:")
+        print(f"   Trades conclusi: {perf['trades_conclusi']}")
+        print(f"   Profitto medio: {perf['profit medio %']:+.2f}%")
+        print(f"   Trade vincenti: {perf['trade vincenti']}")
+        print(f"   Trade perdenti: {perf['trade perdenti']}")
+    
+    # Mostra raccomandazioni con voti
+    print("\n" + "=" * 60)
+    print("RACCOMANDAZIONI AGGIORNATE CON VOTI")
+    print("=" * 60)
+    print("\n" + engine.format_recommendation(rec1))
+    print("\n" + engine.format_recommendation(rec2))
+    
+    # Esporta dati
+    print("\n" + "=" * 60)
+    print("ESPORTAZIONE DATI")
+    print("=" * 60)
+    engine.export_ratings_to_json("ratings_export.json")
+    
+    print("\n✅ Test completato con successo!")
