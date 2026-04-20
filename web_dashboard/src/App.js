@@ -9,6 +9,7 @@ import store from './store';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
+import RiskManagement from './pages/RiskManagement';
 import wsService from './services/websocket';
 import { useSelector } from 'react-redux';
 
@@ -41,7 +42,7 @@ const AppContent = () => {
         currentView={currentView}
         onNavigate={handleNavigate}
       />
-      <Box sx={{ flexGrow: 1, ml: sidebarOpen ? '260px' : 0, transition: 'margin-left 0.3s' }}>
+      <Box sx={{ flexGrow: 1, ml: sidebarOpen ? '280px' : 0, transition: 'margin-left 0.3s' }}>
         <Header
           onMenuClick={() => setSidebarOpen(!sidebarOpen)}
           wsConnected={wsConnected}
@@ -57,6 +58,7 @@ const AppContent = () => {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/risk-management" element={<RiskManagement />} />
             {/* Add more routes as pages are created */}
           </Routes>
         </Box>
