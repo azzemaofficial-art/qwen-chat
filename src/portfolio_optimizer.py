@@ -9,8 +9,11 @@ import pandas as pd
 from typing import Dict, List, Tuple, Optional
 from scipy.optimize import minimize
 from dataclasses import dataclass
+import logging
 import warnings
 warnings.filterwarnings('ignore')
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -371,7 +374,8 @@ class PortfolioOptimizer:
                 if result['volatility'] > 0:
                     result['target_return'] = target_ret
                     target_portfolios.append(result)
-            except:
+            except (ValueError, np.linalg.LinAlgError, RuntimeError) as e:
+                logger.warning(f"Ottimizzazione fallita per target return {target_ret}: {e}")
                 continue
         
         return EfficientFrontier(
