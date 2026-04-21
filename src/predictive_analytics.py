@@ -8,8 +8,11 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
+import logging
 import warnings
 warnings.filterwarnings('ignore')
+
+logger = logging.getLogger(__name__)
 
 try:
     from sklearn.preprocessing import MinMaxScaler
@@ -222,7 +225,8 @@ class EnsemblePredictor:
             XtX_inv = np.linalg.pinv(X_train.T @ X_train)
             beta = XtX_inv @ X_train.T @ y_train
             self.models['ols_beta'] = beta
-        except:
+        except (np.linalg.LinAlgError, ValueError) as e:
+            logger.warning(f"OLS regression fallita: {e}")
             beta = np.zeros(X_train.shape[1])
         
         # Valutazione su test set

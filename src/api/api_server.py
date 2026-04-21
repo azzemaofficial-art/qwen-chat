@@ -14,6 +14,8 @@ import asyncio
 import json
 import logging
 from enum import Enum
+import jwt
+from datetime import timedelta
 
 # Import existing modules
 from src.data_fetcher import DataFetcher
@@ -82,11 +84,67 @@ class MarketData(BaseModel):
 # Active WebSocket connections
 active_connections: Dict[str, List[WebSocket]] = {}
 
+# JWT Configuration
+JWT_SECRET_KEY = "your-secret-key-change-in-production"  # Cambiare in produzione
+JWT_ALGORITHM = "HS256"
+TOKEN_EXPIRE_MINUTES = 30
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)):
-    """Validate JWT token - implement your auth logic here"""
-    # TODO: Implement JWT validation
-    return {"user_id": "demo_user", "role": "analyst"}
+
+class TokenPayload(BaseModel):
+    """JWT token payload structure"""
+    user_id: str
+    role: str
+    exp: datetime
+    iat: datetime
+
+
+def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+    """Create JWT access token"""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+    
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.utcnow()
+    })
+    encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    return encoded_jwt
+
+
+def verify_access_token(token: str) -> Optional[Dict[str, Any]]:
+    """Verify and decode JWT token"""
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        logger.warning("Token scaduto")
+        return None
+    except jwt.InvalidTokenError as e:
+        logger.error(f"Token invalido: {e}")
+        return None
+
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)) -> Dict[str, Any]:
+    """Validate JWT token and return user info"""
+    token = credentials.credentials
+    
+    payload = verify_access_token(token)
+    
+    if payload is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Token non valido o scaduto",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return {
+        "user_id": payload.get("user_id"),
+        "role": payload.get("role"),
+        "exp": payload.get("exp")
+    }
 
 
 @app.get("/health")
